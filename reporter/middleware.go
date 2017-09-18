@@ -20,6 +20,12 @@ func Middleware(reporter Reporter) httpwares.Middleware {
 		}
 		return http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
 			tracker := reporter.Track(req)
+			if tracker == nil {
+				// No tracking.
+				next.ServeHTTP(resp, req)
+				return
+			}
+
 			start := time.Now()
 			tracker.RequestStarted()
 			req.Body = wrapBody(req.Body, func(size int) {
