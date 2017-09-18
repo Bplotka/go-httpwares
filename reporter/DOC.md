@@ -23,6 +23,7 @@ Example implementations:
 ## <a name="pkg-index">Index</a>
 * [func Middleware(reporter Reporter) httpwares.Middleware](#Middleware)
 * [func Tripperware(reporter Reporter) httpwares.Tripperware](#Tripperware)
+* [type HijackedTracker](#HijackedTracker)
 * [type Reporter](#Reporter)
 * [type Tracker](#Tracker)
 
@@ -80,6 +81,19 @@ c.Get("example.org/foo")
 
 </details>
 
+## <a name="HijackedTracker">type</a> [HijackedTracker](./reporter.go#L39-L46)
+``` go
+type HijackedTracker interface {
+    // The connection was hijacked.
+    // This can only be called on server when responseWriter's Hijack method is called.
+    // Note that ResponseStarted can be still called if the hijack happen after the first write.
+    // ResponseDone will omitted intentionally, because we don't have the control when the response will be actually
+    // done on hijacked connection.
+    ConnHijacked(duration time.Duration)
+}
+```
+Receives events about a hijacked request.
+
 ## <a name="Reporter">type</a> [Reporter](./reporter.go#L12-L15)
 ``` go
 type Reporter interface {
@@ -89,7 +103,7 @@ type Reporter interface {
 ```
 Called when a new request is to be tracked.
 
-## <a name="Tracker">type</a> [Tracker](./reporter.go#L18-L35)
+## <a name="Tracker">type</a> [Tracker](./reporter.go#L18-L36)
 ``` go
 type Tracker interface {
     // The exchange has started. This is called immediately after Reporter.Track.
@@ -102,11 +116,12 @@ type Tracker interface {
     RequestRead(duration time.Duration, size int)
     // The handling of the response has started.
     // On the client, this is called after the response headers have been parsed.
-    // On the server, this is called before any data is written.
+    // On the server, this is called before any data is written. In case of hijacked connection this may be omitted.
     ResponseStarted(duration time.Duration, status int, header http.Header)
     // The response has completed.
     // On the client, this is called when the body is read to EOF or closed, whichever comes first, and may be omitted.
-    // On the server, this is called when the handler returns and has therefore completed writing the response.
+    // On the server, this is called when the handler returns and has therefore completed writing the response. It may
+    // be omitted when connection was hijacked.
     ResponseDone(duration time.Duration, status int, size int)
 }
 ```

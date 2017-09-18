@@ -4,7 +4,10 @@
 package http_reporter
 
 import (
+	"bufio"
+	"fmt"
 	"io"
+	"net"
 	"net/http"
 )
 
@@ -14,46 +17,39 @@ type wrappedWriter interface {
 	Size() int
 }
 
-func wrapWriter(w http.ResponseWriter, started func(int)) wrappedWriter {
+func wrapWriter(w http.ResponseWriter, started func(int), hijacked func()) wrappedWriter {
 	wrapped := &writer{
-		parent:  w,
-		started: started,
+		parent:   w,
+		started:  started,
+		hijacked: hijacked,
 	}
+
+	c, isCloseNotifier := w.(http.CloseNotifier)
 	f, isFlusher := w.(http.Flusher)
+	h, isHijacker := w.(http.Hijacker)
+	p, isPusher := w.(http.Pusher)
 	rf, isReaderFrom := w.(io.ReaderFrom)
-	if isFlusher && isReaderFrom {
-		return writerFRF{writer: wrapped, f: f, rf: rf}
+
+	// Check for the two most common combination of interfaces an http.ResponseWriter might implement.
+	if !isHijacker && isPusher && isCloseNotifier {
+		// http2.responseWriter (http 2.0)
+		return &writerHTTP2{writer: wrapped, c: c, h: h, p: p}
+	} else if isCloseNotifier && isFlusher && isHijacker && isReaderFrom {
+		// http.response (http 1.1)
+		return &writerHTTP1{writer: wrapped, c: c, f: f, h: h, rf: rf}
 	}
-	if isFlusher {
-		return writerF{writer: wrapped, f: f}
-	}
-	if isReaderFrom {
-		return writerRF{writer: wrapped, rf: rf}
-	}
+
+	fmt.Println("Warn: Found not supported combination of extra http.ResponseWriter " +
+		"interfaces. This combination differs from standard HTTP 2.0 or HTTP 1.1. Plain http.ResponseWriter wrapper will returned.")
 	return wrapped
 }
 
 type writer struct {
-	parent  http.ResponseWriter
-	started func(int)
-	status  int
-	size    int
-}
-
-type writerF struct {
-	*writer
-	f http.Flusher
-}
-
-type writerRF struct {
-	*writer
-	rf io.ReaderFrom
-}
-
-type writerFRF struct {
-	*writer
-	f  http.Flusher
-	rf io.ReaderFrom
+	parent   http.ResponseWriter
+	started  func(int)
+	hijacked func()
+	status   int
+	size     int
 }
 
 func (w *writer) Status() int {
@@ -88,21 +84,54 @@ func (w *writer) Write(buf []byte) (int, error) {
 	return n, err
 }
 
-func (w writerF) Flush() {
+type writerHTTP2 struct {
+	*writer
+	c http.CloseNotifier
+	h http.Hijacker
+	p http.Pusher
+}
+
+func (w writerHTTP2) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if w.hijacked != nil {
+		w.hijacked()
+		w.hijacked = nil
+	}
+	return w.h.Hijack()
+}
+
+func (w writerHTTP2) CloseNotify() <-chan bool {
+	return w.c.CloseNotify()
+}
+
+func (w writerHTTP2) Push(target string, opts *http.PushOptions) error {
+	return w.p.Push(target, opts)
+}
+
+type writerHTTP1 struct {
+	*writer
+	c  http.CloseNotifier
+	f  http.Flusher
+	h  http.Hijacker
+	rf io.ReaderFrom
+}
+
+func (w writerHTTP1) CloseNotify() <-chan bool {
+	return w.c.CloseNotify()
+}
+
+func (w writerHTTP1) Flush() {
 	w.f.Flush()
 }
 
-func (w writerFRF) Flush() {
-	w.f.Flush()
+func (w writerHTTP1) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if w.hijacked != nil {
+		w.hijacked()
+		w.hijacked = nil
+	}
+	return w.h.Hijack()
 }
 
-func (w writerRF) ReadFrom(r io.Reader) (int64, error) {
-	n, err := w.rf.ReadFrom(r)
-	w.size += int(n)
-	return n, err
-}
-
-func (w writerFRF) ReadFrom(r io.Reader) (int64, error) {
+func (w writerHTTP1) ReadFrom(r io.Reader) (int64, error) {
 	n, err := w.rf.ReadFrom(r)
 	w.size += int(n)
 	return n, err

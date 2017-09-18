@@ -124,6 +124,17 @@ func (t *serverTracker) ResponseDone(duration time.Duration, code int, size int)
 		serverLatency.WithLabelValues(t.name, t.handler, t.host, t.path, t.method, status).Observe(duration.Seconds())
 	}
 	if t.opts.sizes {
-		serverResponseSize.WithLabelValues(t.name, t.handler, t.host, t.path, t.method, strconv.Itoa(code)).Observe(float64(size))
+		serverResponseSize.WithLabelValues(t.name, t.handler, t.host, t.path, t.method, status).Observe(float64(size))
+	}
+}
+
+func (t *serverTracker) ConnHijacked(duration time.Duration) {
+	status := "hijacked"
+	serverCompleted.WithLabelValues(t.name, t.handler, t.host, t.path, t.method, status).Inc()
+	if t.opts.latency {
+		serverLatency.WithLabelValues(t.name, t.handler, t.host, t.path, t.method, status).Observe(duration.Seconds())
+	}
+	if t.opts.sizes {
+		serverResponseSize.WithLabelValues(t.name, t.handler, t.host, t.path, t.method, status).Observe(float64(0))
 	}
 }

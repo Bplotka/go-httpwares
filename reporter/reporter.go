@@ -26,10 +26,21 @@ type Tracker interface {
 	RequestRead(duration time.Duration, size int)
 	// The handling of the response has started.
 	// On the client, this is called after the response headers have been parsed.
-	// On the server, this is called before any data is written.
+	// On the server, this is called before any data is written. In case of hijacked connection this may be omitted.
 	ResponseStarted(duration time.Duration, status int, header http.Header)
 	// The response has completed.
 	// On the client, this is called when the body is read to EOF or closed, whichever comes first, and may be omitted.
-	// On the server, this is called when the handler returns and has therefore completed writing the response.
+	// On the server, this is called when the handler returns and has therefore completed writing the response. It may
+	// be omitted when connection was hijacked.
 	ResponseDone(duration time.Duration, status int, size int)
+}
+
+// Receives events about a hijacked request.
+type HijackedTracker interface {
+	// The connection was hijacked.
+	// This can only be called on server when responseWriter's Hijack method is called.
+	// Note that ResponseStarted can be still called if the hijack happen after the first write.
+	// ResponseDone will omitted intentionally, because we don't have the control when the response will be actually
+	// done on hijacked connection.
+	ConnHijacked(duration time.Duration)
 }
