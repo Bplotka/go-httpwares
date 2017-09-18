@@ -157,7 +157,7 @@ func handlerHijack(t *testing.T, req string, resp string) http.Handler {
 
 		defer conn.Close()
 
-		// Now we are speaking raw TCP, so put HTTP response bytes before actual response.
+		// Now we are speaking raw TCP, so put HTTP status line and header bytes before actual response.
 		buff.Write([]byte("HTTP/1.1 200 OK\r\n"))
 		buff.Write([]byte(fmt.Sprintf("Content-Length: %v\r\n", len(resp))))
 		buff.Write([]byte("Content-Type: text/plain; charset=utf-8\r\n"))
