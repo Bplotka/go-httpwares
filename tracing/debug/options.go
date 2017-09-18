@@ -25,7 +25,7 @@ type options struct {
 	statusCodeErrorFunc IsStatusCodeAnErrorFunc
 }
 
-func evaluateOptions(opts []Option) *options {
+func evalOpts(opts []opt) *options {
 	optCopy := &options{}
 	*optCopy = *defaultOptions
 	for _, o := range opts {
@@ -34,17 +34,17 @@ func evaluateOptions(opts []Option) *options {
 	return optCopy
 }
 
-type Option func(*options)
+type opt func(*options)
 
 // WithFilterFunc customizes the function used for deciding whether a given call is traced or not.
-func WithFilterFunc(f FilterFunc) Option {
+func WithFilterFunc(f FilterFunc) opt {
 	return func(o *options) {
 		o.filterFunc = f
 	}
 }
 
-// WithIsStatusCodeAnError customizes the function used for deciding whether a given call was an error
-func WithIsStatusCodeAnError(f IsStatusCodeAnErrorFunc) Option {
+// WithIsStatusCodeAnError customizes the function used for deciding whether a given call was an error.
+func WithIsStatusCodeAnError(f IsStatusCodeAnErrorFunc) opt {
 	return func(o *options) {
 		o.statusCodeErrorFunc = f
 	}

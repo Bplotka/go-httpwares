@@ -19,6 +19,11 @@ func Tripperware(reporter Reporter) httpwares.Tripperware {
 		}
 		return httpwares.RoundTripperFunc(func(req *http.Request) (*http.Response, error) {
 			tracker := reporter.Track(req)
+			if tracker == nil {
+				// No tracking.
+				return next.RoundTrip(req)
+			}
+
 			start := time.Now()
 			tracker.RequestStarted()
 
