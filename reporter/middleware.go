@@ -25,11 +25,24 @@ func Middleware(reporter Reporter) httpwares.Middleware {
 			req.Body = wrapBody(req.Body, func(size int) {
 				tracker.RequestRead(time.Since(start), size)
 			})
+
+			wasHijacked := false
 			wrapped := wrapWriter(resp, func(status int) {
+				// WriteHeader or Write called for the first time.
 				tracker.ResponseStarted(time.Since(start), status, resp.Header())
+			}, func() {
+				// Hijack called.
+				if h, ok := tracker.(HijackedTracker); ok {
+					h.ConnHijacked(time.Since(start))
+				}
+				wasHijacked = true
 			})
+
 			next.ServeHTTP(wrapped, req)
-			tracker.ResponseDone(time.Since(start), wrapped.Status(), wrapped.Size())
+			if !wasHijacked {
+				// It makes sense only for NOT hijacked connection.
+				tracker.ResponseDone(time.Since(start), wrapped.Status(), wrapped.Size())
+			}
 		})
 	}
 }

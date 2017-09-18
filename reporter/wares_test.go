@@ -5,6 +5,7 @@ package http_reporter_test
 
 import (
 	"bytes"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
@@ -126,4 +127,66 @@ func ExampleTripperware() {
 		http_prometheus.Tripperware(http_prometheus.WithName("testclient")),
 	)
 	c.Get("example.org/foo")
+}
+
+type testReporterWithHijack struct {
+	testReporter
+	hijacked int
+}
+
+func (r *testReporterWithHijack) Track(req *http.Request) http_reporter.Tracker {
+	r.tracked += 1
+	return r
+}
+
+func (r *testReporterWithHijack) ConnHijacked(duration time.Duration) {
+	r.hijacked += 1
+}
+
+func handlerHijack(t *testing.T, req string, resp string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, err := ioutil.ReadAll(r.Body)
+		require.NoError(t, err)
+		assert.Equal(t, req, string(b))
+		r.Body.Close()
+		h, ok := w.(http.Hijacker)
+		require.True(t, ok, "http.ResponseWriter need to implement http.Hijacker for this test")
+
+		conn, buff, err := h.Hijack()
+		require.NoError(t, err)
+
+		defer conn.Close()
+
+		// Now we are speaking raw TCP, so put HTTP response bytes before actual response.
+		buff.Write([]byte("HTTP/1.1 200 OK\r\n"))
+		buff.Write([]byte(fmt.Sprintf("Content-Length: %v\r\n", len(resp))))
+		buff.Write([]byte("Content-Type: text/plain; charset=utf-8\r\n"))
+		buff.Write([]byte("\r\n"))
+		buff.Write([]byte(resp))
+		buff.Flush()
+	})
+}
+
+func TestMiddleware_ReportsStatsWithHijack(t *testing.T) {
+	r := &testReporterWithHijack{}
+	s := httptest.NewServer(chi.Chain(http_reporter.Middleware(r)).Handler(
+		handlerHijack(t, "req-body", "resp-body")),
+	)
+	defer s.Close()
+	resp, err := http.Post(s.URL, "text/plain", bytes.NewBufferString("req-body"))
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+	assert.Equal(t, &testReporterWithHijack{
+		testReporter: testReporter{
+			tracked:     1,
+			reqstarted:  1,
+			reqread:     1,
+			respstarted: 0,
+			respdone:    0,
+			reqsize:     8,
+			respsize:    0,
+			status:      0,
+		},
+		hijacked: 1,
+	}, r)
 }

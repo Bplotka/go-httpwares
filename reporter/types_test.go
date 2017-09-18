@@ -11,8 +11,12 @@ import (
 
 func TestWrappers_ImplementExpectedInterfaces(t *testing.T) {
 	var _ io.WriterTo = bodyWT{}
-	var _ http.Flusher = writerF{}
-	var _ http.Flusher = writerFRF{}
-	var _ io.ReaderFrom = writerRF{}
-	var _ io.ReaderFrom = writerFRF{}
+	var _ http.CloseNotifier = writerHTTP1{}
+	var _ http.Flusher = writerHTTP1{}
+	var _ http.Hijacker = writerHTTP1{}
+	var _ io.ReaderFrom = writerHTTP1{}
+
+	var _ http.CloseNotifier = writerHTTP2{}
+	var _ http.Hijacker = writerHTTP2{}
+	var _ http.Pusher = writerHTTP2{}
 }
